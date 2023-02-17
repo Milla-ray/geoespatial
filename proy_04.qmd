@@ -1,0 +1,692 @@
+---
+title: "Análisis espacial <br> de la delincuencia"
+subtitle: "en la Región Metropolitana"
+author: "Millaray Herrera"
+institute: "18.529.710-1"
+title-slide-attributes:
+    data-background-image: "imagenes/fondo1.jpg"
+    data-background-opacity: "0.4"
+format:
+  revealjs: 
+    theme: dark
+    menu: true
+    slide-number: c/t
+    highlight-style: github
+editor: visual
+engine: knitr
+execute: 
+  warning: false
+  message: false
+source: project
+# quarto-pub:
+#   id: "qpa_66R4uOhMYsiwCCBbfqkKhBUi6Og9sfHee24jSIfv7uv5Aoud4oKohfTic2fBQNAM"
+#   url: "https://millaray-tralma.quarto.pub/"
+---
+
+
+```{r setup, include=FALSE}
+setwd("F:/2022-Data_Science/3_Proyecto")
+
+options(scipen=999,stringsAsFactors=F)
+library(quarto)
+library(sf)#para leer shp, polígonos o puntos y transformar las proyecciones
+library(sp)#para coordinates
+library(leaflet)#para hacer mapas interactivos
+library(rgeos) # para gArea
+library(raster)
+library(spatstat)#es para el comando ppp
+library(spdep)#poly2nb
+library(spatialreg)
+library(plotly)
+library(dplyr)
+library(leaflegend)#para añadir las leyendas por cada poligono
+library(knitr)
+
+DF_2021=readRDS("data/data_final/shape_casos_poli_2021.rds")
+DF_2021_utm=st_transform(DF_2021,4326)
+rm(DF_2021)
+
+op=function(x, d=2) sprintf(paste0("%1.",d,"f"),x) 
+
+```
+
+
+## Detalles del estudio
+
+::: incremental
+- Los datos son recolectados del CENSO 2017 y del Centro de Estudios y Análisis del Delito [(CEAD)](http://cead.spd.gov.cl/estadisticas-delictuales/).
+
+- Los datos georreferenciales de Chile son recolectados de la página del Instituto Nacional de Estadística [(INE)](https://www.ine.cl/herramientas/portal-de-mapas/geodatos-abiertos).
+
+- **Casos policiales:** Es el indicador utilizado para analizar la ocurrencia de hechos delictivos. Considera las denuncias de delitos que realiza la comunidad en las unidades policiales, más las detenciones que realiza las policías ante la ocurrencia de delitos flagrantes.
+
+:::
+
+
+## Los delitos a analizar son:
+
+::: columns
+::: {.column width="40%"}
+::: incremental
+-   Delitos de homicidios
+-   Delitos de violación
+-   Delitos por lesiones
+-   Hurtos
+-   Robo con fuerza
+-   Robo con violencia o intimidación
+-   Robo por sorpresa
+:::
+:::
+
+::: {.column width="60%"}
+![](imagenes/043-clipboard.png){fig-align="center"}
+:::
+:::
+
+::: {.notes}
+Los delitos a analizar son casos policiales, es decir, las denuncias de delitos que realiza la comunidad en las unidades policiales, más las detenciones que realiza las policías ante la ocurrencia de delitos flagrantes.
+:::
+
+## Contexto y problemática a abordar
+
+::: columns
+::: {.column width="40%"}
+![](imagenes/002-statistics.png){fig-align="center"}
+:::
+
+::: {.column width="60%"}
+::: incremental
+- ¿En qué comuna de la Región Metropolitana se registró mayor cantidad de delitos?
+
+- ¿Existe alguna brecha entre comunas con respecto a la cantidad de delitos?
+
+- Cuáles son los factores que afectan a los tipos de delitos y porqué.
+:::
+:::
+:::
+
+::: {.notes}
+Contexto y problemática a abordar, la principal característica que se quiere evaluar es en qué comuna de la RM se registró mayor cantidad de delitos, esto se evaluará para el año 2021
+Existe alguna brecha entre comunas con respecto a la cantidad de delitos
+Cuales son los factores que afectar a los tipos de delitos y porque
+:::
+
+## <font size="5"> Cantidad de delitos por comuna en la región Metropolitana </font>
+
+```{r}
+#| fig-align: center
+#| fig-height: 6
+
+#Colores
+tipo_delito=c(names(DF_2021_utm)[14:20])
+
+#crea paleta de colores para los diferentes tipos de delitos
+for(i in 1:length(tipo_delito)){
+  eval(parse(text=sprintf('color_%s=colorNumeric(palette=c("green4","gold1","darkorange","red"),domain=DF_2021_utm$%s)',tipo_delito[i],tipo_delito[i])),envir=.GlobalEnv)
+}
+
+mapa_1=leaflet(DF_2021_utm) %>% 
+  setView(lng=-70.64827,lat=-33.45694,zoom=09) %>% 
+  addProviderTiles("Wikimedia") %>% 
+  #delitos de homicidios
+  addPolygons(fillColor=~color_delitos_de_homicidios(delitos_de_homicidios),
+              fillOpacity=0.7,weight=1,opacity=1,color="white",
+              smoothFactor=0.5,
+              highlightOptions=highlightOptions(color="#666",weight=1.5,fillOpacity=0.7,bringToFront=T),
+              label=~paste0("<b> Comuna: </b>",nom_comuna,"<br>",
+                            "<b> Delitos de homicidios: </b>",delitos_de_homicidios) %>% lapply(htmltools::HTML),
+              labelOptions=labelOptions(style=list("font-weight"="normal",padding="3px 8px"),textsize="15px",direction="auto"),
+              popup=~paste0(nom_comuna,": ",delitos_de_homicidios),
+              group="Delitos de homicidios") %>% 
+  #delitos de violación
+  addPolygons(fillColor=~color_delitos_de_violaciones(delitos_de_violaciones),
+              fillOpacity=0.7,weight=1,opacity=1,color="white",
+              smoothFactor=0.5,
+              highlightOptions=highlightOptions(color="#666",weight=1.5,fillOpacity=0.7,bringToFront=T),
+              label=~paste0("<b> Comuna: </b>",nom_comuna,"<br>",
+                            "<b> Delitos de violaciones: </b>",delitos_de_violaciones) %>% lapply(htmltools::HTML),
+              labelOptions=labelOptions(style=list("font-weight"="normal",padding="3px 8px"),textsize="15px",direction="auto"),
+              popup=~paste0(nom_comuna,": ",delitos_de_violaciones),
+              group="Delitos de violaciones") %>% 
+  #delitos por lesiones
+  addPolygons(fillColor=~color_delitos_por_lesiones(delitos_por_lesiones),
+              fillOpacity=0.7,weight=1,opacity=1,color="white",
+              smoothFactor=0.5,
+              highlightOptions=highlightOptions(color="#666",weight=1.5,fillOpacity=0.7,bringToFront=T),
+              label=~paste0("<b> Comuna: </b>",nom_comuna,"<br>",
+                            "<b> Delitos por lesiones: </b>",delitos_por_lesiones) %>% lapply(htmltools::HTML),
+              labelOptions=labelOptions(style=list("font-weight"="normal",padding="3px 8px"),textsize="15px",direction="auto"),
+              popup=~paste0(nom_comuna,": ",delitos_por_lesiones),
+              group="Delitos por lesiones") %>%
+  #hurtos
+  addPolygons(fillColor=~color_hurtos(hurtos),
+              fillOpacity=0.7,weight=1,opacity=1,color="white",
+              smoothFactor=0.5,
+              highlightOptions=highlightOptions(color="#666",weight=1.5,fillOpacity=0.7,bringToFront=T),
+              label=~paste0("<b> Comuna: </b>",nom_comuna,"<br>",
+                            "<b> Hurtos: </b>",hurtos) %>% lapply(htmltools::HTML),
+              labelOptions=labelOptions(style=list("font-weight"="normal",padding="3px 8px"),textsize="15px",direction="auto"),
+              popup=~paste0(nom_comuna,": ",hurtos),
+              group="Hurtos") %>%
+  #robo_con_fuerza
+  addPolygons(fillColor=~color_robo_con_fuerza(robo_con_fuerza),
+              fillOpacity=0.7,weight=1,opacity=1,color="white",
+              smoothFactor=0.5,
+              highlightOptions=highlightOptions(color="#666",weight=1.5,fillOpacity=0.7,bringToFront=T),
+              label=~paste0("<b> Comuna: </b>",nom_comuna,"<br>",
+                            "<b> Robos con fuerza: </b>",robo_con_fuerza) %>% lapply(htmltools::HTML),
+              labelOptions=labelOptions(style=list("font-weight"="normal",padding="3px 8px"),textsize="15px",direction="auto"),
+              popup=~paste0(nom_comuna,": ",robo_con_fuerza),
+              group="Robos con fuerza") %>%
+  #robo_con_violencia_o_intimidacion
+  addPolygons(fillColor=~color_robo_con_violencia_o_intimidacion(robo_con_violencia_o_intimidacion),
+              fillOpacity=0.7,weight=1,opacity=1,color="white",
+              smoothFactor=0.5,
+              highlightOptions=highlightOptions(color="#666",weight=1.5,fillOpacity=0.7,bringToFront=T),
+              label=~paste0("<b> Comuna: </b>",nom_comuna,"<br>",
+                            "<b> Robos con violencia: </b>",robo_con_violencia_o_intimidacion) %>% lapply(htmltools::HTML),
+              labelOptions=labelOptions(style=list("font-weight"="normal",padding="3px 8px"),textsize="15px",direction="auto"),
+              popup=~paste0(nom_comuna,": ",robo_con_violencia_o_intimidacion),
+              group="Robos con violencia") %>%
+  #robo_por_sorpresa
+  addPolygons(fillColor=~color_robo_por_sorpresa(robo_por_sorpresa),
+              fillOpacity=0.7,weight=1,opacity=1,color="white",
+              smoothFactor=0.5,
+              highlightOptions=highlightOptions(color="#666",weight=1.5,fillOpacity=0.7,bringToFront=T),
+              label=~paste0("<b> Comuna: </b>",nom_comuna,"<br>",
+                            "<b> Robos por sorpresa: </b>",robo_por_sorpresa) %>% lapply(htmltools::HTML),
+              labelOptions=labelOptions(style=list("font-weight"="normal",padding="3px 8px"),textsize="15px",direction="auto"),
+              popup=~paste0(nom_comuna,": ",robo_por_sorpresa),
+              group="Robos por sorpresa") %>%
+  #añadir leyenda
+  addLegendNumeric(pal=color_delitos_de_homicidios,
+            values=~delitos_de_homicidios,
+            title="Delitos de homicidios",
+            position="bottomright",
+            group="Delitos de homicidios") %>%
+  addLegendNumeric(pal=color_delitos_de_violaciones,
+            values=~delitos_de_violaciones,
+            title="Delitos de violaciones",
+            position="bottomright",
+            group="Delitos de violaciones") %>%
+  addLegendNumeric(pal=color_delitos_por_lesiones,
+            values=~delitos_por_lesiones,
+            title="Delitos por lesiones",
+            position="bottomright",
+            group="Delitos por lesiones") %>%
+  addLegendNumeric(pal=color_hurtos,
+            values=~hurtos,
+            title="Hurtos",
+            position="bottomright",
+            group="Hurtos") %>%
+  addLegendNumeric(pal=color_robo_con_fuerza,
+            values=~robo_con_fuerza,
+            title="Robos con fuerza",
+            position="bottomright",
+            group="Robos con fuerza") %>%
+  addLegendNumeric(pal=color_robo_con_violencia_o_intimidacion,
+            values=~robo_con_violencia_o_intimidacion,
+            title="Robos con violencia",
+            position="bottomright",
+            group="Robos con violencia") %>%
+  addLegendNumeric(pal=color_robo_por_sorpresa,
+            values=~robo_por_sorpresa,
+            title="Robos por sorpresa",
+            position="bottomright",
+            group="Robos por sorpresa") %>%
+  addLayersControl(baseGroups=c("Delitos de homicidios","Delitos de violaciones","Delitos por lesiones","Hurtos","Robos con fuerza","Robos con violencia","Robos por sorpresa"),
+    options=layersControlOptions(collapsed=T),
+    position="topleft")
+
+mapa_1
+
+rm(tipo_delito)
+
+```
+
+
+## Etapas para la regresión espacial
+::: incremental
+-   Definir un criterio de vecindad y asignar pesos a estas relaciones espaciales.
+
+-   Chequear autocorrelaciones espaciales de la variable dependiente.
+
+-   Estimar un modelo de regresión ordinario (OLS).
+
+-   Determinar tipo de errores espaciales y escoger el tipo de regresión correspondiente.
+
+-   Estimar un modelo de regresión espacial.
+:::
+
+
+## <font size="6"> Cálculo de Hotspost </font> 
+::: panel-tabset
+```{r}
+
+#pasar a sp
+crs_utm="+proj=utm +zone=19 +south +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"
+crs_ll="+proj=longlat +datum=WGS84 +no_defs"
+
+DF_utm=st_transform(DF_2021_utm,CRS(crs_utm))
+DF_utm=st_as_sf(DF_2021_utm)
+DF_utm=spTransform(as(DF_2021_utm,"Spatial"),CRS(crs_utm))
+
+DF_utm@data$poblacion=as.numeric(DF_utm@data$poblacion)
+rownames(DF_utm@data)=DF_utm$id=1:nrow(DF_utm)
+
+#define la ventana
+x_min=raster::extent(DF_utm)[1] - 1000
+x_max=raster::extent(DF_utm)[2] + 1000
+y_min=raster::extent(DF_utm)[3] - 1000
+y_max=raster::extent(DF_utm)[4] + 1000
+w=spatstat.geom::as.owin(c(x_min,x_max,y_min,y_max))
+
+hots_1=ppp(sp::coordinates(DF_utm)[,1],sp::coordinates(DF_utm)[,2],window=w) %>% stats::density(adjust=.50)
+
+hots_2=raster::raster(hots_1,crs=CRS(crs_utm))
+hots_2@crs=CRS(crs_utm)
+values(hots_2)=values(hots_2)*100000000
+
+# reproyectar raster
+hots_2=raster::projectRaster(hots_2,crs=crs_ll)
+
+palviol=colorNumeric(c("#FFFFFF19","yellow","gold1","darkorange","red"),values(hots_2),na.color="transparent")
+
+```
+
+
+### <font size="5"> Gráfico bruto</font>{background-color="white"}
+```{r}
+plot(hots_1,main="Densidad de la cantidad de delitos")
+```
+
+
+### <font size="5"> Mapa</font>
+```{r}
+leaflet() %>% setView(lng=-70.64827,lat=-33.45694,zoom=9) %>% 
+  addProviderTiles("Wikimedia") %>%
+  addRasterImage(hots_2,colors=palviol,opacity=0.7,group="Densidad de delitos") %>% 
+  addLegend("bottomright",pal=palviol,values=values(hots_2),
+    title="Densidad de delitos",opacity=0.4,group="Densidad de delitos")
+
+rm(hots_1,x_min,x_max,y_min,y_max,w,crs_utm,DF_2021_utm)
+
+```
+
+:::
+
+::: {.notes}
+Acá se puede apreciar que efectivamente la cantidad de delitos se concentra en el centro, en este caso en santigo, se puede viaulizar mejor en el mapa, donde se aprecia las comunad con mayor densidad.
+:::
+
+
+## <font size="6"> Índice de Moran</font>
+::: panel-tabset
+```{r}
+
+nb_1=nb2listw(poly2nb(DF_utm,queen=T))
+
+#Asignar pesos por población de cada comuna
+nb_1$weights=lapply(1:nrow(DF_utm@data), function(i)
+  DF_utm@data$poblacion[DF_utm@data$id %in% nb_1$neighbours[[i]]] / sum(DF_utm@data$poblacion[DF_utm@data$id %in% nb_1$neighbours[[i]]]))
+
+#Educación
+DF_utm@data$educacion_2=scale(DF_utm@data$educacion)
+DF_utm@data$educacion_lag=lag.listw(nb_1,scale(DF_utm@data$educacion_2))
+local_edu=localmoran(DF_utm$educacion,nb_1,na.action=na.exclude,zero.policy=T)
+DF_utm@data$lmoran_p_edu=local_edu[,5]
+x_edu=DF_utm@data$educacion_2
+y_edu=DF_utm@data$educacion_lag-mean(DF_utm@data$educacion_lag)
+fit=lm(y_edu~x_edu)
+
+DF_utm$sigv_edu[DF_utm$lmoran_p_edu<0.05]="Significativo"
+DF_utm$sigv_edu[DF_utm$lmoran_p_edu>=0.05]="No significativo"
+
+#Promedio de edad
+DF_utm@data$edad_2=scale(DF_utm@data$prom_edad)
+DF_utm@data$edad_lag=lag.listw(nb_1,scale(DF_utm@data$edad_2))
+local_edad=localmoran(DF_utm$prom_edad,nb_1,na.action=na.exclude,zero.policy=T)
+DF_utm@data$lmoran_p_edad=local_edad[,5]
+x_edad=DF_utm@data$edad_2
+y_edad=DF_utm@data$edad_lag-mean(DF_utm@data$edad_lag)
+fit_2=lm(y_edad~x_edad)
+
+DF_utm$sigv_edad[DF_utm$lmoran_p_edad<0.05]="Significativo"
+DF_utm$sigv_edad[DF_utm$lmoran_p_edad>=0.05]="No significativo"
+
+```
+
+### <font size="5"> Gráfico educación</font>
+```{r}
+
+moran_gg=ggplot(DF_utm@data,aes(x_edu,y_edu,color=sigv_edu)) +
+   geom_point(alpha=0.5,size=3) +
+   geom_smooth(method="lm",formula=y~x,se=F,col="red")+
+   geom_hline(yintercept=0,lty=2) +
+   geom_vline(xintercept=0,lty=2) +
+     theme(legend.title=element_blank(),legend.position="bottom") +
+     labs(title="Gráfico de Moran de Educación",
+          x="Educación",
+          y="Educación rezagado espacialmente")
+
+plotlymoran=plotly_build(moran_gg)
+plotlymoran$x$data[[1]]$text=paste("Comuna:",(DF_utm$nom_comuna[DF_utm$sigv_edu=="No significativo"]))
+plotlymoran$x$data[[2]]$text=paste("Comuna:",(DF_utm$nom_comuna[DF_utm$sigv_edu=="Significativo"]))
+plotlymoran$x$data[[3]]$text=paste("")
+plotlymoran$x$layout$title="Gráfico de Moran de Educación"
+plotlymoran$x$layout$legend$title=""
+plotlymoran %>% layout(legend=list(orientation='h'))
+
+```
+
+### <font size="5"> Test educación</font>
+
+$H_0$: Los años educacionales están distribuido en forma aleatoria entre las entidades del área de estudio.
+
+</br>
+
+```{r}
+testm_educa=spdep::moran.test(x=DF_utm$educacion,listw=nb_1)
+```
+
+::: {.fragment fragment-index=1}
+p-valor: `r op(testm_educa$p.value,15)`
+:::
+
+### <font size="5"> Gráfico edad</font>
+```{r}
+
+moran_gg_edad=ggplot(DF_utm@data,aes(x_edad,y_edad,color=sigv_edad)) +
+   geom_point(alpha=0.5,size=3) +
+   geom_smooth(method="lm",formula=y~x,se=F,col="red")+
+   geom_hline(yintercept=0,lty=2) +
+   geom_vline(xintercept=0,lty=2) +
+     theme(legend.title=element_blank(),legend.position="bottom") +
+     labs(title="Gráfico de Moran de promedio de edad",
+          x="Promedio de edad",
+          y="Promedio de edad rezagado espacialmente")
+
+plotlymoran_edad=plotly_build(moran_gg_edad)
+plotlymoran_edad$x$data[[1]]$text=paste("Comuna:",(DF_utm$nom_comuna[DF_utm$sigv_edad=="No significativo"]))
+plotlymoran_edad$x$data[[2]]$text=paste("Comuna:",(DF_utm$nom_comuna[DF_utm$sigv_edad=="Significativo"]))
+plotlymoran_edad$x$data[[3]]$text=paste("")
+plotlymoran_edad$x$layout$title="Gráfico de Moran de promedio de edad"
+plotlymoran_edad$x$layout$legend$title=""
+plotlymoran_edad %>% layout(legend=list(orientation='h'))
+
+```
+
+
+### <font size="5"> Test edad</font>
+
+$H_0$: El promedio de las edades están distribuido en forma aleatoria entre las entidades del área de estudio.
+
+</br>
+
+```{r}
+testm_edad=spdep::moran.test(x=DF_utm$prom_edad,listw=nb_1)
+```
+
+::: {.fragment fragment-index=2}
+p-valor: `r op(testm_edad$p.value,15)`
+:::
+
+:::
+
+
+## <font size="5"> Visualización</font>
+
+```{r}
+
+pval=0.05
+
+#Definir cuadrantes
+DF_utm@data=DF_utm@data %>% 
+  mutate(clusterM_edu=case_when((educacion_2>=0 & educacion_lag>=0 & lmoran_p_edu<=pval)~"Alto nivel educacional",
+                                (educacion_2<=0 & educacion_lag<=0 & lmoran_p_edu<=pval)~"Bajo nivel educacional",
+                                (educacion_2>=0 & educacion_lag<=0 & lmoran_p_edu<=pval)~"Outlier",
+                                (educacion_2<=0 & educacion_lag>=0 & lmoran_p_edu<=pval)~"Outlier",
+                                TRUE~"NS"),
+clusterM_edad=case_when((edad_2>=0 & edad_lag>=0 & lmoran_p_edad<=pval)~"Promedio de edad alto",
+                        (edad_2<=0 & edad_lag<=0 & lmoran_p_edad<=pval)~"Promedio de edad bajo",
+                        (edad_2>=0 & edad_lag<=0 & lmoran_p_edad<=pval)~"Outlier",
+                        (edad_2<=0 & edad_lag>=0 & lmoran_p_edad<=pval)~"Outlier",
+                        TRUE~"NS"))
+
+# reproyectar raster
+regiones_lc=spTransform(DF_utm,CRS(crs_ll))
+HH_LL_edu=subset(regiones_lc,clusterM_edu=="Alto nivel educacional"|clusterM_edu=="Bajo nivel educacional")
+HH_LL_edad=subset(regiones_lc,clusterM_edad=="Promedio de edad alto"|clusterM_edad=="Promedio de edad bajo")
+
+palseg_edu=colorFactor(palette=c("blue","sienna"),domain=HH_LL_edu$clusterM_edu)
+palseg_edad=colorFactor(palette=c("blue","sienna"),domain=HH_LL_edad$clusterM_edad)
+
+mapa_2=leaflet() %>% setView(lng=-70.64827,lat=-33.45694,zoom=09) %>% 
+  addProviderTiles("Wikimedia") %>% 
+  addPolygons(data=HH_LL_edu,
+              fillColor=~palseg_edu(clusterM_edu),
+              stroke=TRUE,weight=1,opacity=1,color="white",
+              smoothFactor=0.5,
+              fillOpacity=0.4,
+              label=~paste0("<b> Comuna: </b>",nom_comuna) %>% lapply(htmltools::HTML),
+              group="educacion") %>%
+  addPolygons(data=HH_LL_edad,
+              fillColor=~palseg_edad(clusterM_edad),
+              stroke=TRUE,weight=1,opacity=1,color="white",
+              smoothFactor=0.5,
+              fillOpacity=0.4,
+              label=~paste0("<b> Comuna: </b>",nom_comuna) %>% lapply(htmltools::HTML),
+              group="edad") %>% 
+  addRasterImage(hots_2,colors=palviol,opacity=0.7,group="Densidad de delitos") %>% 
+  addLegend(data=HH_LL_edu,"bottomleft",pal=palseg_edu,values=~clusterM_edu,
+            title="Años de escolaridad",opacity=0.7,group="educacion") %>%
+    addLegend(data=HH_LL_edad,"bottomleft",pal=palseg_edad,values=~clusterM_edad,
+            title="Promedio de edad",opacity=0.7,group="edad") %>%
+  addLegend("bottomright",pal=palviol,values=values(hots_2),
+    title="Densidad de delitos",opacity=0.4,group="Densidad de delitos") %>% 
+  addLayersControl(overlayGroups=c("educacion","edad","Densidad de delitos"),
+    options=layersControlOptions(collapsed=TRUE)) %>% 
+  hideGroup(c("edad"))
+
+mapa_2
+
+```
+
+::: {.notes}
+Finalmente se puede apreciar alto nivel educacional y promedio de edad alto y bajo, con respecto a la densidad de la población.
+A primera vista no se puede decir que hay una autocorrelación espacial, porque no se puede afirmar que en las comunas que existe mayor nivel educación o en este caso, mayor promedio de edad, ocurren mayor cantidad de delitos o viceversa.
+:::
+
+
+## <font size="6"> Estimación del modelo de regresión espacial</font>
+
+::: panel-tabset
+### <font size="5"> Modelo OLS</font>{style="font-size:24px"}
+
+$$
+\text{Tipo de delito}=log(densidad)+\beta_1 * \text{educación} + \beta_2 * \text{promedio edad}
+$$
+</br>
+
+::: {.fragment fragment-index=3}
+
+<center>
+Robo por sorpresa
+</center>
+
+:::
+
+::: {.fragment fragment-index=4}
+
+```{r}
+# Calculo area en hectáreas
+DF_utm@data$area=gArea(DF_utm,byid=T)/100000000
+DF_utm@data$densidad=DF_utm@data$poblacion/DF_utm@data$area
+
+ml_rps=lm(robo_por_sorpresa~log(densidad)+educacion+prom_edad,data=DF_utm@data)
+
+summary(ml_rps)$coefficients %>%
+  knitr::kable(digits=3,align="cccc",col.names=c("Estimador","Sd","Valor t","Pr(>|t|)")) %>% 
+  kableExtra::column_spec(c(1:4),width=c("2cm","2cm","2cm","2cm"))
+
+```
+
+:::
+
+</br>
+
+::: {.fragment fragment-index=5}
+$H_0$: Los residuos de la regresión distribuyen de manera aleatoria.
+
+```{r}
+#Diagnosticos de autocorrelacion
+diag=lm.morantest(ml_rps,nb_1,alternative="greater")
+#los residuos de la regresión SIIII distribuyen de manera aleatoria
+```
+
+**p-valor:** `r diag$p.value`
+:::
+
+
+### <font size="5"> Tipo de error espacial</font>{style="font-size:20px"}
+
+```{r}
+#delitos_de_homicidios
+err_ddh_2=lm(delitos_de_homicidios~log(densidad)+prom_edad,data=DF_utm@data) %>% 
+  lm.LMtests(listw=nb_1,test="all")
+
+#delitos_de_violaciones
+err_ddv_2=lm(delitos_de_violaciones~log(densidad)+prom_edad,data=DF_utm@data) %>% 
+  lm.LMtests(listw=nb_1,test="all")
+
+#delitos_por_lesiones
+err_dpl_2=lm(delitos_por_lesiones~log(densidad)+prom_edad,data=DF_utm@data) %>% 
+  lm.LMtests(listw=nb_1,test="all")
+
+#hurtos
+err_h_2=lm(hurtos~log(densidad)+educacion,data=DF_utm@data) %>% 
+  lm.LMtests(listw=nb_1,test="all")
+
+#robo_con_fuerza
+err_rcf_1=lm(robo_con_fuerza~log(densidad)+educacion+prom_edad,data=DF_utm@data) %>% 
+  lm.LMtests(listw=nb_1,test="all")
+
+#robo_con_violencia_o_intimidacion
+err_rcvoi_2=lm(robo_con_violencia_o_intimidacion~log(densidad)+prom_edad,data=DF_utm@data) %>% 
+  lm.LMtests(listw=nb_1,test="all")
+
+#robo_por_sorpresa
+err_rps_1=lm(robo_por_sorpresa~log(densidad)+educacion+prom_edad,data=DF_utm@data) %>% 
+  lm.LMtests(listw=nb_1,test="all")
+
+#tabla con los tipo de errores espaciales
+tab_err_esp=tibble(
+  "Tipo de delito"=c("Delitos de homicidios","Delitos de violación","Delitos por lesiones","Hurtos","Robo con fuerza","Robo con violencia o intimidación","Robo por sorpresa"),
+  "LMerr"=c(err_ddh_2$LMerr$p.value,
+            err_ddv_2$LMerr$p.value,
+            err_dpl_2$LMerr$p.value,
+            err_h_2$LMerr$p.value,
+            err_rcf_1$LMerr$p.value,
+            err_rcvoi_2$LMerr$p.value,
+            err_rps_1$LMerr$p.value),
+  "LMlag"=c(err_ddh_2$LMlag$p.value,err_ddv_2$LMlag$p.value,err_dpl_2$LMlag$p.value,err_h_2$LMlag$p.value,err_rcf_1$LMlag$p.value,err_rcvoi_2$LMlag$p.value,err_rps_1$LMlag$p.value),
+  "RLMerr"=c(err_ddh_2$RLMerr$p.value,err_ddv_2$RLMerr$p.value,err_dpl_2$RLMerr$p.value,err_h_2$RLMerr$p.value,err_rcf_1$RLMerr$p.value,err_rcvoi_2$RLMerr$p.value,err_rps_1$RLMerr$p.value),
+  "RLMlag"=c(err_ddh_2$RLMlag$p.value,err_ddv_2$RLMlag$p.value,err_dpl_2$RLMlag$p.value,err_h_2$RLMlag$p.value,err_rcf_1$RLMlag$p.value,err_rcvoi_2$RLMlag$p.value,err_rps_1$RLMlag$p.value),
+  "SARMA"=c(err_ddh_2$SARMA$p.value,err_ddv_2$SARMA$p.value,err_dpl_2$SARMA$p.value,err_h_2$SARMA$p.value,err_rcf_1$SARMA$p.value,err_rcvoi_2$SARMA$p.value,err_rps_1$SARMA$p.value))
+
+```
+
+```{r}
+
+tab_err_esp %>% 
+  knitr::kable(digits=3,align="lccccc") %>% 
+  kableExtra::column_spec(c(1:6),width=c("4cm","1cm","1cm","1cm","1cm","1cm"))
+```
+
+
+### <font size="5"> LMerr </font>{style="font-size:21px"}
+
+</br>
+
+```{r}
+nb=nb2listw(poly2nb(DF_utm,queen=T))
+
+fit.errdurb=spatialreg::errorsarlm(robo_por_sorpresa~log(densidad)+educacion+prom_edad,data=DF_utm@data,
+                       listw=nb,
+                       etype="error",
+                       method="eigen")
+
+summary(fit.errdurb,Nagelkerke=T)$Coef %>%
+  knitr::kable(digits=3,align="cccc",col.names=c("Estimador","Sd","Valor t","Pr(>|t|)")) %>% 
+  kableExtra::column_spec(c(1:4),width=c("2cm","2cm","2cm","2cm"))
+
+res.err=moran.test(fit.errdurb$residuals,nb)
+
+```
+
+</br>
+
+::: {.fragment fragment-index=6}
+<center>
+Índice de Moran
+
+**p-valor:** `r res.err$p.value`
+</center>
+:::
+
+### <font size="5"> SARMA </font>{style="font-size:21px"}
+
+</br>
+
+```{r}
+fit.sac=sacsarlm(robo_por_sorpresa~log(densidad)+educacion+prom_edad,data=DF_utm@data,
+                 listw=nb,
+                 type="sac",
+                 method="eigen")
+
+summary(fit.sac, Nagelkerke=T)$Coef %>%
+  knitr::kable(digits=3,align="cccc",col.names=c("Estimador","Sd","Valor t","Pr(>|t|)")) %>% 
+  kableExtra::column_spec(c(1:4),width=c("2cm","2cm","2cm","2cm"))
+
+## Test Moran residuos
+res.sac=moran.test(fit.sac$residuals,nb)
+
+```
+
+</br>
+
+::: {.fragment fragment-index=7}
+<center>
+Índice de Moran
+
+**p-valor:** `r res.sac$p.value`
+</center>
+:::
+
+:::
+
+::: {.notes}
+La primera etpa se realizó un modelo de regresión lineal múltiple, para evaluar qué variables se ajustaban mejor al tipo de delito, en este caso fue robo por sorpresa, y el pvalor del índice de moran es ..
+
+los residuos no son aleatorios y no están ajustando bien, por ende , hay que buscar otras variables predictoras que permitan ajustar los robos con violencia, ttal vez fuinconen estas variables con los otros tipos de delitos
+
+Después se realizó la dependencia de los modelos, Modelo de error de Durbin espacial es el que tiene un pvalor mas bajo , por ende ese se tomará y el y Modelo de autocorrelación espacial, dado que es el que siempre se selecciona debido a la metodología utilizada
+:::
+
+## Recomencaciones
+
+::: columns
+::: {.column width="40%"}
+![](imagenes/012-repair.png){fig-align="center"}
+:::
+
+::: {.column width="60%"}
+::: incremental
+
+-   Evaluar otro tipo de variables, cantidad de hogares y año.
+
+-   Buscar nuevas variables para evaluar en los modelos espaciales.
+:::
+:::
+:::
+
